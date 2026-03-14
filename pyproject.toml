@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "townshipcanada"
-version = "1.0.0"
+version = "1.0.1"
 description = "Python SDK for the Township Canada API — convert Canadian legal land descriptions (DLS, NTS, Geographic Townships) to GPS coordinates and back."
 readme = "README.md"
 license = "MIT"
