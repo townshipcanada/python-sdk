@@ -1,6 +1,11 @@
 # Township Canada Python SDK
 
+[![PyPI](https://img.shields.io/pypi/v/townshipcanada)](https://pypi.org/project/townshipcanada/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 Convert Canadian legal land descriptions (DLS, NTS, Geographic Townships) to GPS coordinates and back. Covers Alberta, Saskatchewan, Manitoba, British Columbia, and Ontario.
+
+[Documentation](https://townshipcanada.com/api) · [GitHub](https://github.com/townshipcanada/python-sdk) · [PyPI](https://pypi.org/project/townshipcanada/)
 
 ## Installation
 

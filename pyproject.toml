@@ -60,8 +60,8 @@ dev = [
 [project.urls]
 Homepage = "https://townshipcanada.com"
 Documentation = "https://townshipcanada.com/api"
-Repository = "https://github.com/townshipcanada/townshipcanada-web/tree/main/packages/python-sdk"
-Issues = "https://github.com/townshipcanada/townshipcanada-web/issues"
+Repository = "https://github.com/townshipcanada/python-sdk"
+Issues = "https://github.com/townshipcanada/python-sdk/issues"
 
 [project.scripts]
 township = "townshipcanada.cli:main"
