@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version as _pkg_version
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
+
+try:
+    _VERSION = _pkg_version("townshipcanada")
+except Exception:
+    _VERSION = "0.0.0-dev"
 
 from .exceptions import (
     AuthenticationError,
@@ -64,7 +70,7 @@ def _parse_features(features: List[Feature]) -> SearchResult:
     grid = next((f for f in features if f.properties.shape == "grid"), None)
 
     if not centroid or centroid.geometry.type != "Point":
-        raise NotFoundError("No centroid found in response")
+        raise NotFoundError("No centroid found in response", status_code=404)
 
     coords = centroid.geometry.coordinates  # type: ignore[union-attr]
     boundary: Optional[Union[Polygon, MultiPolygon]] = None
@@ -128,7 +134,7 @@ class TownshipCanada:
             headers={
                 "X-API-Key": api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "townshipcanada-python/1.0.0",
+                "User-Agent": f"townshipcanada-python/{_VERSION}",
             },
             timeout=timeout,
         )
@@ -260,23 +266,26 @@ class TownshipCanada:
         chunk_size = min(chunk_size, MAX_BATCH_SIZE)
         all_results: List[SearchResult] = []
         total_failed = 0
+        failures: List[Tuple[str, str]] = []
 
         for batch in _chunk(locations, chunk_size):
             response = self._client.post("/batch/legal-location", json=batch)
             _raise_for_status(response)
             fc = FeatureCollection.model_validate(response.json())
             grouped = _group_features_by_location(fc.features)
-            for features in grouped.values():
+            for location_key, features in grouped.items():
                 try:
                     all_results.append(_parse_features(features))
-                except (NotFoundError, TownshipCanadaError):
+                except (NotFoundError, TownshipCanadaError) as exc:
                     total_failed += 1
+                    failures.append((location_key, str(exc)))
 
         return BatchResult(
             results=all_results,
             total=len(locations),
             success=len(all_results),
             failed=total_failed,
+            failures=failures,
         )
 
     def batch_reverse(
@@ -303,6 +312,7 @@ class TownshipCanada:
         chunk_size = min(chunk_size, MAX_BATCH_SIZE)
         all_results: List[SearchResult] = []
         total_failed = 0
+        failures: List[Tuple[str, str]] = []
 
         for batch in _chunk(list(coordinates), chunk_size):
             body: Dict[str, Any] = {"coordinates": [list(c) for c in batch]}
@@ -314,17 +324,19 @@ class TownshipCanada:
             _raise_for_status(response)
             fc = FeatureCollection.model_validate(response.json())
             grouped = _group_features_by_location(fc.features)
-            for features in grouped.values():
+            for location_key, features in grouped.items():
                 try:
                     all_results.append(_parse_features(features))
-                except (NotFoundError, TownshipCanadaError):
+                except (NotFoundError, TownshipCanadaError) as exc:
                     total_failed += 1
+                    failures.append((location_key, str(exc)))
 
         return BatchResult(
             results=all_results,
             total=len(coordinates),
             success=len(all_results),
             failed=total_failed,
+            failures=failures,
         )
 
     # --- Convenience ---
@@ -390,7 +402,7 @@ class AsyncTownshipCanada:
             headers={
                 "X-API-Key": api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "townshipcanada-python/1.0.0",
+                "User-Agent": f"townshipcanada-python/{_VERSION}",
             },
             timeout=timeout,
         )
@@ -496,23 +508,26 @@ class AsyncTownshipCanada:
         chunk_size = min(chunk_size, MAX_BATCH_SIZE)
         all_results: List[SearchResult] = []
         total_failed = 0
+        failures: List[Tuple[str, str]] = []
 
         for batch in _chunk(locations, chunk_size):
             response = await self._client.post("/batch/legal-location", json=batch)
             _raise_for_status(response)
             fc = FeatureCollection.model_validate(response.json())
             grouped = _group_features_by_location(fc.features)
-            for features in grouped.values():
+            for location_key, features in grouped.items():
                 try:
                     all_results.append(_parse_features(features))
-                except (NotFoundError, TownshipCanadaError):
+                except (NotFoundError, TownshipCanadaError) as exc:
                     total_failed += 1
+                    failures.append((location_key, str(exc)))
 
         return BatchResult(
             results=all_results,
             total=len(locations),
             success=len(all_results),
             failed=total_failed,
+            failures=failures,
         )
 
     async def batch_reverse(
@@ -530,6 +545,7 @@ class AsyncTownshipCanada:
         chunk_size = min(chunk_size, MAX_BATCH_SIZE)
         all_results: List[SearchResult] = []
         total_failed = 0
+        failures: List[Tuple[str, str]] = []
 
         for batch in _chunk(list(coordinates), chunk_size):
             body: Dict[str, Any] = {"coordinates": [list(c) for c in batch]}
@@ -541,17 +557,19 @@ class AsyncTownshipCanada:
             _raise_for_status(response)
             fc = FeatureCollection.model_validate(response.json())
             grouped = _group_features_by_location(fc.features)
-            for features in grouped.values():
+            for location_key, features in grouped.items():
                 try:
                     all_results.append(_parse_features(features))
-                except (NotFoundError, TownshipCanadaError):
+                except (NotFoundError, TownshipCanadaError) as exc:
                     total_failed += 1
+                    failures.append((location_key, str(exc)))
 
         return BatchResult(
             results=all_results,
             total=len(coordinates),
             success=len(all_results),
             failed=total_failed,
+            failures=failures,
         )
 
     # --- Convenience ---

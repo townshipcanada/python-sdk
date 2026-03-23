@@ -120,6 +120,8 @@ class BatchResult:
     total: int = 0
     success: int = 0
     failed: int = 0
+    failures: List[tuple] = field(default_factory=list)
+    """List of ``(location, error_message)`` tuples for items that failed to parse."""
 
 
 @dataclass

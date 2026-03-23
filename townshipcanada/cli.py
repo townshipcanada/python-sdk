@@ -62,48 +62,45 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(1)
 
-    api_key = os.environ.get("TOWNSHIP_API_KEY") or os.environ.get("TOWNSHIP_CANADA_API_KEY")
+    api_key = os.environ.get("TOWNSHIP_CANADA_API_KEY") or os.environ.get("TOWNSHIP_API_KEY")
     if not api_key:
         print(
-            "Error: Set TOWNSHIP_API_KEY or TOWNSHIP_CANADA_API_KEY environment variable.",
+            "Error: Set TOWNSHIP_CANADA_API_KEY (or TOWNSHIP_API_KEY) environment variable.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    client = TownshipCanada(api_key)
+    with TownshipCanada(api_key) as client:
+        try:
+            if args.command == "convert":
+                result = client.search(args.location)
+            else:
+                result = client.reverse(args.longitude, args.latitude)
 
-    try:
-        if args.command == "convert":
-            result = client.search(args.location)
-        else:
-            result = client.reverse(args.longitude, args.latitude)
-
-        if args.output_json:
-            print(
-                json.dumps(
-                    {
-                        "legal_location": result.legal_location,
-                        "latitude": result.latitude,
-                        "longitude": result.longitude,
-                        "province": result.province,
-                        "survey_system": result.survey_system,
-                        "unit": result.unit,
-                    },
-                    indent=2,
+            if args.output_json:
+                print(
+                    json.dumps(
+                        {
+                            "legal_location": result.legal_location,
+                            "latitude": result.latitude,
+                            "longitude": result.longitude,
+                            "province": result.province,
+                            "survey_system": result.survey_system,
+                            "unit": result.unit,
+                        },
+                        indent=2,
+                    )
                 )
-            )
-        else:
-            print(f"{result.latitude}, {result.longitude}")
-            print(f"  Location:  {result.legal_location}")
-            print(f"  Province:  {result.province}")
-            print(f"  System:    {result.survey_system}")
-            print(f"  Unit:      {result.unit}")
+            else:
+                print(f"{result.latitude}, {result.longitude}")
+                print(f"  Location:  {result.legal_location}")
+                print(f"  Province:  {result.province}")
+                print(f"  System:    {result.survey_system}")
+                print(f"  Unit:      {result.unit}")
 
-    except TownshipCanadaError as exc:
-        print(f"Error: {exc.message}", file=sys.stderr)
-        sys.exit(1)
-    finally:
-        client.close()
+        except TownshipCanadaError as exc:
+            print(f"Error: {exc.message}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

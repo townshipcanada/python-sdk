@@ -20,7 +20,7 @@ import os
 
 from townshipcanada import TownshipCanada
 
-tc = TownshipCanada(os.environ["TOWNSHIP_API_KEY"])
+tc = TownshipCanada(os.environ["TOWNSHIP_CANADA_API_KEY"])
 
 # DLS (Dominion Land Survey) — Alberta, Saskatchewan, Manitoba
 result = tc.search("NW-36-42-3-W5")
@@ -131,8 +131,8 @@ asyncio.run(main())
 The SDK includes a command-line tool:
 
 ```bash
-# Set your API key
-export TOWNSHIP_API_KEY="your_api_key"
+# Set your API key (TOWNSHIP_API_KEY is also accepted)
+export TOWNSHIP_CANADA_API_KEY="your_api_key"
 
 # Convert a legal land description
 township convert "NW-36-42-3-W5"
@@ -184,10 +184,11 @@ All methods are also available on `AsyncTownshipCanada` as async/await.
 
 | Field     | Type                 | Description            |
 | --------- | -------------------- | ---------------------- |
-| `results` | `List[SearchResult]` | Successfully converted |
-| `total`   | `int`                | Total items submitted  |
-| `success` | `int`                | Successful conversions |
-| `failed`  | `int`                | Failed conversions     |
+| `results`  | `List[SearchResult]`        | Successfully converted                    |
+| `total`    | `int`                       | Total items submitted                     |
+| `success`  | `int`                       | Successful conversions                    |
+| `failed`   | `int`                       | Failed conversions                        |
+| `failures` | `List[Tuple[str, str]]`     | `(location, error)` for each failed item  |
 
 **`AutocompleteSuggestion`** — returned by `autocomplete()`
 
