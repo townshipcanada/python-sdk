@@ -109,6 +109,50 @@ if result.boundary:
     # gdf.to_file("parcel.geojson", driver="GeoJSON")
 ```
 
+### 4. Agriculture: Pull a Parcel Report
+
+```python
+from townshipcanada import TownshipCanada
+
+tc = TownshipCanada("your_api_key")
+
+# Quarter section or LSD input (LSDs resolve to their containing quarter)
+report = tc.ag_report("NW-36-42-3-W5")
+
+print(report.area_ha)                     # 64.75
+print(report.productivity.lsrs_score)     # 72
+print(report.soil.order)                  # "Chernozemic"
+print(report.cropping.rotation_pattern)   # "Canola-Wheat"
+
+# Batch up to 25 per request (auto-chunks larger lists)
+items = tc.ag_batch(["NW-36-42-3-W5", "10-2-24-28-W4"])
+for item in items:
+    if item.status == "ok":
+        print(item.legal_location, item.data.area_ha)
+```
+
+### 5. Energy: Wells, Pipelines, and Tenure on an LSD
+
+```python
+from townshipcanada import TownshipCanada
+
+tc = TownshipCanada("your_api_key")
+
+report = tc.energy_report("10-36-42-3-W5")
+
+print(report.activity.total_wells)        # 4
+print(report.activity.dominant_operator)  # "EXAMPLE ENERGY LTD"
+if report.production:
+    print(report.production.oil_m3_12mo)  # 1250.5
+for well in report.wells:
+    print(well.uwi, well.operator_name)
+
+# Operator typeahead (AER licensees by name or BA code)
+operators = tc.energy_operator_autocomplete("cenovus")
+for op in operators:
+    print(op.ba_code, op.name, op.active_wells)
+```
+
 ## Async Support
 
 ```python
@@ -163,6 +207,25 @@ township convert "NW-36-42-3-W5" --json
 | `boundary(location)`                                                           | Get boundary polygon only               |
 | `raw(location)`                                                                | Get raw GeoJSON FeatureCollection       |
 
+**Ag API** — agriculture parcel reports (quarter-section grain; AB, SK, MB):
+
+| Method                                                    | Description                                          |
+| --------------------------------------------------------- | ---------------------------------------------------- |
+| `ag_report(legal_location, *, geometry=False)`             | Full agriculture report for a quarter section or LSD |
+| `ag_batch(locations)`                                      | Batch reports, up to 25 per request (auto-chunks)    |
+| `ag_autocomplete(query, *, limit=None, proximity=None)`    | Suggest quarter sections with agriculture coverage   |
+
+**Energy API** — per-parcel energy reports (LSD grain; AB, SK, MB):
+
+| Method                                                        | Description                                       |
+| ------------------------------------------------------------- | ------------------------------------------------- |
+| `energy_report(legal_location, *, geometry=False)`             | Full energy report for an LSD                     |
+| `energy_batch(locations)`                                      | Batch reports, up to 25 per request (auto-chunks) |
+| `energy_autocomplete(query, *, limit=None, proximity=None)`    | Suggest LSDs with energy data                     |
+| `energy_operator_autocomplete(query, *, limit=None)`           | Search AER licensees by name or BA code           |
+
+BC (NTS) locations are not yet supported by the Ag and Energy APIs and raise `ValidationError`.
+
 All methods are also available on `AsyncTownshipCanada` as async/await.
 
 ### Return Types
@@ -199,6 +262,52 @@ All methods are also available on `AsyncTownshipCanada` as async/await.
 | `longitude`      | `float` | Centroid longitude          |
 | `survey_system`  | `str`   | Survey system               |
 | `unit`           | `str`   | Resolution unit             |
+
+**`AgReport`** — returned by `ag_report()` (and in `AgBatchItem.data`)
+
+| Field                                                                             | Type                              | Description                                      |
+| --------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------ |
+| `legal_location`                                                                   | `str`                             | Input legal location                             |
+| `qs_legal_location`                                                                | `Optional[str]`                   | Resolved quarter section (when input was an LSD) |
+| `province`                                                                         | `Optional[str]`                   | `ab`, `sk`, or `mb`                              |
+| `area_ha`                                                                          | `Optional[float]`                 | Parcel area in hectares                          |
+| `productivity`, `cropping`, `soil`, `land_use`, `drought`, `wetlands`, `parcel_context` | section models or `None`     | Sections degrade independently to `None`         |
+| `sk` / `mb`                                                                        | `Optional[dict]`                  | Province extras (SK crown land, MB soils)        |
+| `geometry`                                                                         | `Polygon \| MultiPolygon \| None` | Boundary, only with `geometry=True`              |
+
+**`EnergyReport`** — returned by `energy_report()` (and in `EnergyBatchItem.data`)
+
+| Field                              | Type                              | Description                             |
+| ---------------------------------- | --------------------------------- | --------------------------------------- |
+| `legal_location`                   | `str`                             | Input LSD                               |
+| `province`                         | `Optional[str]`                   | `ab`, `sk`, or `mb`                     |
+| `activity`                         | `EnergyActivity`                  | Well/pipeline/facility counts, operator |
+| `production`                       | `Optional[EnergyProduction]`      | Trailing-12-month Petrinex production   |
+| `tenure`                           | `List[EnergyTenure]`              | Crown tenure dispositions               |
+| `wells` / `pipelines` / `facilities` | lists                           | Per-feature detail rows                 |
+| `alternative_energy`               | `Optional[dict]`                  | CCS/geothermal, when present            |
+| `geometry`                         | `Polygon \| MultiPolygon \| None` | Boundary, only with `geometry=True`     |
+
+Report models keep unrecognized fields (Pydantic `extra="allow"`), so new API fields are preserved on the parsed objects.
+
+**`AgBatchItem` / `EnergyBatchItem`** — returned by `ag_batch()`, `energy_batch()` (input order preserved)
+
+| Field            | Type                                    | Description                        |
+| ---------------- | --------------------------------------- | ---------------------------------- |
+| `legal_location` | `str`                                   | The location as submitted          |
+| `status`         | `"ok" \| "not_found" \| "error"`        | Per-item outcome                   |
+| `data`           | report or `None`                        | Full report when `status == "ok"`  |
+| `error`          | `Optional[str]`                         | Explanation when `status == "error"` |
+
+**`EnergyOperator`** — returned by `energy_operator_autocomplete()`
+
+| Field             | Type            | Description               |
+| ----------------- | --------------- | ------------------------- |
+| `ba_code`         | `Optional[str]` | AER business associate ID |
+| `name`            | `str`           | Licensee name             |
+| `active_wells`    | `Optional[int]` | Active well count         |
+| `abandoned_wells` | `Optional[int]` | Abandoned well count      |
+| `orphan_wells`    | `Optional[int]` | Orphan well count         |
 
 ### Exceptions
 
