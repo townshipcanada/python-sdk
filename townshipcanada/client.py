@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from importlib.metadata import version as _pkg_version
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import httpx
 
@@ -22,11 +22,12 @@ from .exceptions import (
     ValidationError,
 )
 from .models import (
-    AgBatchItem,
+    AgBatchResponse,
     AgReport,
     AutocompleteSuggestion,
+    BatchMeta,
     BatchResult,
-    EnergyBatchItem,
+    EnergyBatchResponse,
     EnergyOperator,
     EnergyReport,
     Feature,
@@ -46,28 +47,37 @@ def _raise_for_status(response: httpx.Response) -> None:
     if response.is_success:
         return
 
+    code: Optional[str] = None
     try:
         body = response.json()
-        message = body.get("message") or body.get("error") or response.text
+        error = body.get("error")
+        if isinstance(error, dict):
+            # Ag/Energy v1 error bodies: {"error": {"code", "message"}}
+            message = error.get("message") or response.text
+            code = error.get("code")
+        else:
+            message = body.get("message") or error or response.text
     except Exception:
         message = response.text
 
     status = response.status_code
     if status == 400:
-        raise ValidationError(message, status_code=status)
+        raise ValidationError(message, status_code=status, code=code)
     if status == 401:
-        raise AuthenticationError(message, status_code=status)
+        raise AuthenticationError(message, status_code=status, code=code)
     if status == 404:
-        raise NotFoundError(message, status_code=status)
+        raise NotFoundError(message, status_code=status, code=code)
     if status == 413:
-        raise PayloadTooLargeError(message, status_code=status)
+        raise PayloadTooLargeError(message, status_code=status, code=code)
     if status == 429:
         retry_after_raw = response.headers.get("retry-after")
         retry_after = float(retry_after_raw) if retry_after_raw else None
-        raise RateLimitError(message, status_code=status, retry_after=retry_after)
+        raise RateLimitError(
+            message, status_code=status, retry_after=retry_after, code=code
+        )
     if status >= 500:
-        raise ServerError(message, status_code=status)
-    raise TownshipCanadaError(message, status_code=status)
+        raise ServerError(message, status_code=status, code=code)
+    raise TownshipCanadaError(message, status_code=status, code=code)
 
 
 def _parse_features(features: List[Feature]) -> SearchResult:
@@ -128,7 +138,7 @@ def _autocomplete_params(
     limit: Optional[int],
     proximity: Optional[Tuple[float, float]],
 ) -> Dict[str, Union[str, int]]:
-    """Build query params shared by the autocomplete endpoints."""
+    """Build query params for the parcel autocomplete endpoint."""
     params: Dict[str, Union[str, int]] = {"location": query}
     if limit is not None:
         params["limit"] = limit
@@ -137,12 +147,41 @@ def _autocomplete_params(
     return params
 
 
-def _report_params(legal_location: str, geometry: bool) -> Dict[str, str]:
+def _report_autocomplete_params(
+    query: str,
+    limit: Optional[int],
+    proximity: Optional[Tuple[float, float]],
+) -> Dict[str, Union[str, int, float]]:
+    """Build query params for the Ag/Energy v1 autocomplete endpoints.
+
+    v1 takes ``q`` plus two explicit ``lat``/``lng`` params (the SDK keeps
+    the ``proximity=(longitude, latitude)`` tuple for its own surface).
+    """
+    params: Dict[str, Union[str, int, float]] = {"q": query}
+    if limit is not None:
+        params["limit"] = limit
+    if proximity is not None:
+        params["lat"] = proximity[1]
+        params["lng"] = proximity[0]
+    return params
+
+
+def _report_params(
+    legal_location: str, include: Optional[Sequence[str]]
+) -> Dict[str, str]:
     """Build query params shared by the report endpoints."""
     params: Dict[str, str] = {"legal_location": legal_location}
-    if geometry:
-        params["geometry"] = "true"
+    if include:
+        params["include"] = ",".join(include)
     return params
+
+
+def _merge_batch_meta(target: BatchMeta, chunk: BatchMeta) -> None:
+    """Sum one chunk's batch counters into the aggregate."""
+    target.total += chunk.total
+    target.ok += chunk.ok
+    target.not_found += chunk.not_found
+    target.error += chunk.error
 
 
 # ---------------------------------------------------------------------------
@@ -414,46 +453,61 @@ class TownshipCanada:
 
     # --- Ag API ---
 
-    def ag_report(self, legal_location: str, *, geometry: bool = False) -> AgReport:
+    def ag_report(
+        self,
+        legal_location: str,
+        *,
+        include: Optional[Sequence[str]] = None,
+    ) -> AgReport:
         """Get the agriculture parcel report for a quarter section or LSD.
 
         LSD inputs are resolved to their containing quarter section
-        (``qs_legal_location`` surfaces the resolved quarter).
+        (``resolved_legal_location`` surfaces the resolved quarter).
 
         Args:
             legal_location: A quarter section (e.g. ``"NW-36-42-3-W5"``)
                 or LSD (e.g. ``"10-36-42-3-W5"``).
-            geometry: Include the quarter-section boundary as GeoJSON.
+            include: Section projection — return only these sections (the
+                omitted sections are never queried). Valid values:
+                ``productivity``, ``cropping``, ``soil``, ``land_use``,
+                ``drought``, ``wetlands``, ``hydrology``, ``parcel_context``,
+                ``provincial_detail``, ``geometry``. ``geometry`` attaches
+                the boundary under ``parcel.geometry``.
 
         Returns:
             An AgReport. Sections degrade independently: an unavailable
-            data layer is ``None`` rather than failing the report.
+            data layer is ``None`` rather than failing the report
+            (``meta.unavailable`` says which and why).
         """
         response = self._client.get(
-            "/ag/report", params=_report_params(legal_location, geometry)
+            "/ag/report", params=_report_params(legal_location, include)
         )
         _raise_for_status(response)
         return AgReport.model_validate(response.json())
 
-    def ag_batch(self, locations: List[str]) -> List[AgBatchItem]:
+    def ag_batch(self, locations: List[str]) -> AgBatchResponse:
         """Get agriculture reports for multiple locations in batch.
 
         Automatically chunks arrays larger than 25 (the API maximum per
-        request). Results are returned in input order with per-item status.
+        request). Results are returned in input order with per-item status;
+        the ``meta`` counters are summed across chunks.
 
         Args:
             locations: List of quarter section or LSD legal locations.
 
         Returns:
-            A list of AgBatchItem envelopes
-            (``legal_location``, ``status``, ``data``, ``error``).
+            An AgBatchResponse (``results``, ``meta``). Each item carries
+            ``legal_location``, ``status``, ``error`` (``{code, message}``
+            or ``None``), and ``data``.
         """
-        items: List[AgBatchItem] = []
+        aggregate = AgBatchResponse()
         for batch in _chunk(locations, MAX_REPORT_BATCH_SIZE):
             response = self._client.post("/ag/batch", json=batch)
             _raise_for_status(response)
-            items.extend(AgBatchItem.model_validate(item) for item in response.json())
-        return items
+            chunk = AgBatchResponse.model_validate(response.json())
+            aggregate.results.extend(chunk.results)
+            _merge_batch_meta(aggregate.meta, chunk.meta)
+        return aggregate
 
     def ag_autocomplete(
         self,
@@ -469,13 +523,15 @@ class TownshipCanada:
         Args:
             query: Partial quarter section or LSD (e.g. ``"NW-36-42"``).
             limit: Maximum number of suggestions (1-10, default 3).
-            proximity: ``(longitude, latitude)`` tuple to bias results.
+            proximity: ``(longitude, latitude)`` tuple to bias results
+                (sent to the API as explicit ``lat``/``lng`` params).
 
         Returns:
             A list of AutocompleteSuggestion objects.
         """
         response = self._client.get(
-            "/ag/autocomplete", params=_autocomplete_params(query, limit, proximity)
+            "/ag/autocomplete",
+            params=_report_autocomplete_params(query, limit, proximity),
         )
         _raise_for_status(response)
         return _parse_suggestions(FeatureCollection.model_validate(response.json()))
@@ -483,7 +539,10 @@ class TownshipCanada:
     # --- Energy API ---
 
     def energy_report(
-        self, legal_location: str, *, geometry: bool = False
+        self,
+        legal_location: str,
+        *,
+        include: Optional[Sequence[str]] = None,
     ) -> EnergyReport:
         """Get the energy parcel report for a Legal Subdivision (LSD).
 
@@ -492,40 +551,49 @@ class TownshipCanada:
 
         Args:
             legal_location: An LSD legal location (e.g. ``"10-36-42-3-W5"``).
-            geometry: Include the LSD boundary as GeoJSON.
+            include: Section projection — return only these sections (the
+                omitted sections are never queried). Valid values:
+                ``summary``, ``production``, ``tenure``, ``wells``,
+                ``pipelines``, ``facilities``, ``alternative_energy``,
+                ``geometry``. ``geometry`` attaches the LSD boundary under
+                ``parcel.geometry``.
 
         Returns:
-            An EnergyReport. A ``None`` section or empty list means no data
-            at that location (or one source degraded); the rest of the
-            report is still trustworthy.
+            An EnergyReport. A ``None`` section means no data at that
+            location (or one source degraded — ``meta.unavailable`` says
+            which); the rest of the report is still trustworthy. Array
+            sections are ``{total, returned, truncated, more, rows}``
+            envelopes.
         """
         response = self._client.get(
-            "/energy/report", params=_report_params(legal_location, geometry)
+            "/energy/report", params=_report_params(legal_location, include)
         )
         _raise_for_status(response)
         return EnergyReport.model_validate(response.json())
 
-    def energy_batch(self, locations: List[str]) -> List[EnergyBatchItem]:
+    def energy_batch(self, locations: List[str]) -> EnergyBatchResponse:
         """Get energy reports for multiple LSDs in batch.
 
         Automatically chunks arrays larger than 25 (the API maximum per
-        request). Results are returned in input order with per-item status.
+        request). Results are returned in input order with per-item status;
+        the ``meta`` counters are summed across chunks.
 
         Args:
             locations: List of LSD legal locations.
 
         Returns:
-            A list of EnergyBatchItem envelopes
-            (``legal_location``, ``status``, ``data``, ``error``).
+            An EnergyBatchResponse (``results``, ``meta``). Each item
+            carries ``legal_location``, ``status``, ``error``
+            (``{code, message}`` or ``None``), and ``data``.
         """
-        items: List[EnergyBatchItem] = []
+        aggregate = EnergyBatchResponse()
         for batch in _chunk(locations, MAX_REPORT_BATCH_SIZE):
             response = self._client.post("/energy/batch", json=batch)
             _raise_for_status(response)
-            items.extend(
-                EnergyBatchItem.model_validate(item) for item in response.json()
-            )
-        return items
+            chunk = EnergyBatchResponse.model_validate(response.json())
+            aggregate.results.extend(chunk.results)
+            _merge_batch_meta(aggregate.meta, chunk.meta)
+        return aggregate
 
     def energy_autocomplete(
         self,
@@ -541,14 +609,15 @@ class TownshipCanada:
         Args:
             query: Partial LSD (e.g. ``"10-36-42"``).
             limit: Maximum number of suggestions (1-10, default 3).
-            proximity: ``(longitude, latitude)`` tuple to bias results.
+            proximity: ``(longitude, latitude)`` tuple to bias results
+                (sent to the API as explicit ``lat``/``lng`` params).
 
         Returns:
             A list of AutocompleteSuggestion objects.
         """
         response = self._client.get(
             "/energy/autocomplete",
-            params=_autocomplete_params(query, limit, proximity),
+            params=_report_autocomplete_params(query, limit, proximity),
         )
         _raise_for_status(response)
         return _parse_suggestions(FeatureCollection.model_validate(response.json()))
@@ -566,7 +635,8 @@ class TownshipCanada:
             limit: Maximum number of matches (1-20, default 10).
 
         Returns:
-            A list of EnergyOperator objects.
+            A list of EnergyOperator objects (each carries ``slug``, which
+            routes straight to ``/energy/operators/{name}``).
         """
         params: Dict[str, Union[str, int]] = {"q": query}
         if limit is not None:
@@ -575,7 +645,7 @@ class TownshipCanada:
         _raise_for_status(response)
         return [
             EnergyOperator.model_validate(op)
-            for op in response.json().get("operators", [])
+            for op in response.json().get("rows", [])
         ]
 
 
@@ -806,29 +876,34 @@ class AsyncTownshipCanada:
     # --- Ag API ---
 
     async def ag_report(
-        self, legal_location: str, *, geometry: bool = False
+        self,
+        legal_location: str,
+        *,
+        include: Optional[Sequence[str]] = None,
     ) -> AgReport:
         """Get the agriculture parcel report for a quarter section or LSD.
 
         See :meth:`TownshipCanada.ag_report` for full documentation.
         """
         response = await self._client.get(
-            "/ag/report", params=_report_params(legal_location, geometry)
+            "/ag/report", params=_report_params(legal_location, include)
         )
         _raise_for_status(response)
         return AgReport.model_validate(response.json())
 
-    async def ag_batch(self, locations: List[str]) -> List[AgBatchItem]:
+    async def ag_batch(self, locations: List[str]) -> AgBatchResponse:
         """Get agriculture reports for multiple locations in batch.
 
         See :meth:`TownshipCanada.ag_batch` for full documentation.
         """
-        items: List[AgBatchItem] = []
+        aggregate = AgBatchResponse()
         for batch in _chunk(locations, MAX_REPORT_BATCH_SIZE):
             response = await self._client.post("/ag/batch", json=batch)
             _raise_for_status(response)
-            items.extend(AgBatchItem.model_validate(item) for item in response.json())
-        return items
+            chunk = AgBatchResponse.model_validate(response.json())
+            aggregate.results.extend(chunk.results)
+            _merge_batch_meta(aggregate.meta, chunk.meta)
+        return aggregate
 
     async def ag_autocomplete(
         self,
@@ -842,7 +917,8 @@ class AsyncTownshipCanada:
         See :meth:`TownshipCanada.ag_autocomplete` for full documentation.
         """
         response = await self._client.get(
-            "/ag/autocomplete", params=_autocomplete_params(query, limit, proximity)
+            "/ag/autocomplete",
+            params=_report_autocomplete_params(query, limit, proximity),
         )
         _raise_for_status(response)
         return _parse_suggestions(FeatureCollection.model_validate(response.json()))
@@ -850,31 +926,34 @@ class AsyncTownshipCanada:
     # --- Energy API ---
 
     async def energy_report(
-        self, legal_location: str, *, geometry: bool = False
+        self,
+        legal_location: str,
+        *,
+        include: Optional[Sequence[str]] = None,
     ) -> EnergyReport:
         """Get the energy parcel report for a Legal Subdivision (LSD).
 
         See :meth:`TownshipCanada.energy_report` for full documentation.
         """
         response = await self._client.get(
-            "/energy/report", params=_report_params(legal_location, geometry)
+            "/energy/report", params=_report_params(legal_location, include)
         )
         _raise_for_status(response)
         return EnergyReport.model_validate(response.json())
 
-    async def energy_batch(self, locations: List[str]) -> List[EnergyBatchItem]:
+    async def energy_batch(self, locations: List[str]) -> EnergyBatchResponse:
         """Get energy reports for multiple LSDs in batch.
 
         See :meth:`TownshipCanada.energy_batch` for full documentation.
         """
-        items: List[EnergyBatchItem] = []
+        aggregate = EnergyBatchResponse()
         for batch in _chunk(locations, MAX_REPORT_BATCH_SIZE):
             response = await self._client.post("/energy/batch", json=batch)
             _raise_for_status(response)
-            items.extend(
-                EnergyBatchItem.model_validate(item) for item in response.json()
-            )
-        return items
+            chunk = EnergyBatchResponse.model_validate(response.json())
+            aggregate.results.extend(chunk.results)
+            _merge_batch_meta(aggregate.meta, chunk.meta)
+        return aggregate
 
     async def energy_autocomplete(
         self,
@@ -889,7 +968,7 @@ class AsyncTownshipCanada:
         """
         response = await self._client.get(
             "/energy/autocomplete",
-            params=_autocomplete_params(query, limit, proximity),
+            params=_report_autocomplete_params(query, limit, proximity),
         )
         _raise_for_status(response)
         return _parse_suggestions(FeatureCollection.model_validate(response.json()))
@@ -911,5 +990,5 @@ class AsyncTownshipCanada:
         _raise_for_status(response)
         return [
             EnergyOperator.model_validate(op)
-            for op in response.json().get("operators", [])
+            for op in response.json().get("rows", [])
         ]
