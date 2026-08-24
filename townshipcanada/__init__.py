@@ -20,8 +20,6 @@ from .exceptions import (
     ValidationError,
 )
 from .models import (
-    AgBatchItem,
-    AgBatchResponse,
     AgCropping,
     AgDominantCrop,
     AgDrought,
@@ -42,15 +40,10 @@ from .models import (
     AgSoilClassification,
     AgWetlands,
     AutocompleteSuggestion,
-    BatchItemError,
-    BatchMeta,
     BatchResult,
-    EnergyBatchItem,
-    EnergyBatchResponse,
     EnergyDominantOperator,
     EnergyFacilitiesSection,
     EnergyFacilityRow,
-    EnergyOperator,
     EnergyParcel,
     EnergyPipelineRow,
     EnergyPipelinesSection,
@@ -105,11 +98,7 @@ __all__ = [
     "ReportMeta",
     "SectionSource",
     "UnavailableSection",
-    "BatchItemError",
-    "BatchMeta",
     "AgReport",
-    "AgBatchItem",
-    "AgBatchResponse",
     "AgParcel",
     "AgProductivity",
     "AgProductivityRating",
@@ -129,8 +118,6 @@ __all__ = [
     "AgParcelContext",
     "AgProvincialDetail",
     "EnergyReport",
-    "EnergyBatchItem",
-    "EnergyBatchResponse",
     "EnergyParcel",
     "EnergySummary",
     "EnergySummaryWells",
@@ -149,7 +136,6 @@ __all__ = [
     "EnergyPipelinesSection",
     "EnergyFacilityRow",
     "EnergyFacilitiesSection",
-    "EnergyOperator",
 ]
 
 from importlib.metadata import version as _pkg_version

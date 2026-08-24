@@ -369,26 +369,6 @@ ENERGY_REPORT = {
     "meta": {"unavailable": [], "sources": {"production": {"name": "Petrinex", "as_of": None}}},
 }
 
-OPERATORS_RESPONSE = {
-    "rows": [
-        {
-            "name": "EXAMPLE ENERGY LTD",
-            "ba_code": "0AB1",
-            "slug": "example-energy-ltd",
-            "active_wells": 1250,
-            "abandoned_wells": 320,
-            "orphan_wells": 0,
-        }
-    ],
-    "meta": {"q": "example", "limit": 10},
-}
-
-EMPTY_BATCH_RESPONSE = {
-    "results": [],
-    "meta": {"total": 0, "ok": 0, "not_found": 0, "error": 0},
-}
-
-
 # --- Sync Client Tests ---
 
 
@@ -730,103 +710,6 @@ class TestTownshipCanada:
 
         assert exc_info.value.code == "not_found"
 
-    @respx.mock
-    def test_ag_batch(self):
-        batch_response = {
-            "results": [
-                {
-                    "legal_location": "NW-36-42-3-W5",
-                    "status": "ok",
-                    "error": None,
-                    "data": AG_REPORT,
-                },
-                {
-                    "legal_location": "not a location",
-                    "status": "error",
-                    "error": {
-                        "code": "invalid_legal_location",
-                        "message": "Not a quarter section or LSD.",
-                    },
-                    "data": None,
-                },
-                {
-                    "legal_location": "NW-1-1-1-W4",
-                    "status": "not_found",
-                    "error": None,
-                    "data": None,
-                },
-            ],
-            "meta": {"total": 3, "ok": 1, "not_found": 1, "error": 1},
-        }
-        route = respx.post(f"{BASE}/ag/batch").mock(
-            return_value=Response(200, json=batch_response)
-        )
-
-        with TownshipCanada("test-key") as tc:
-            batch = tc.ag_batch(["NW-36-42-3-W5", "not a location", "NW-1-1-1-W4"])
-
-        import json
-
-        body = json.loads(route.calls[0].request.content)
-        assert body == ["NW-36-42-3-W5", "not a location", "NW-1-1-1-W4"]
-
-        assert len(batch.results) == 3
-        assert batch.results[0].status == "ok"
-        assert batch.results[0].error is None
-        assert batch.results[0].data is not None
-        assert batch.results[0].data.parcel is not None
-        assert batch.results[0].data.parcel.area_ha == pytest.approx(64.75)
-        assert batch.results[1].status == "error"
-        assert batch.results[1].error is not None
-        assert batch.results[1].error.code == "invalid_legal_location"
-        assert batch.results[2].status == "not_found"
-        assert batch.results[2].data is None
-        assert batch.meta.total == 3
-        assert batch.meta.ok == 1
-        assert batch.meta.not_found == 1
-        assert batch.meta.error == 1
-
-    @respx.mock
-    def test_ag_batch_auto_chunks(self):
-        respx.post(f"{BASE}/ag/batch").mock(
-            return_value=Response(
-                200,
-                json={
-                    "results": [],
-                    "meta": {"total": 25, "ok": 20, "not_found": 4, "error": 1},
-                },
-            )
-        )
-
-        locations = [f"NW-{i}-42-3-W5" for i in range(60)]
-
-        with TownshipCanada("test-key") as tc:
-            batch = tc.ag_batch(locations)
-
-        # 60 items with chunk size 25 -> 3 requests (25 + 25 + 10)
-        assert len(respx.calls) == 3
-        # meta counters are summed across chunks
-        assert batch.meta.total == 75
-        assert batch.meta.ok == 60
-
-    @respx.mock
-    def test_ag_autocomplete(self):
-        route = respx.get(f"{BASE}/ag/autocomplete").mock(
-            return_value=Response(200, json=AUTOCOMPLETE_RESPONSE)
-        )
-
-        with TownshipCanada("test-key") as tc:
-            suggestions = tc.ag_autocomplete("NW-36", limit=5, proximity=(-114.0, 51.0))
-
-        url = str(route.calls[0].request.url)
-        assert "q=NW-36" in url
-        assert "limit=5" in url
-        assert "lat=51.0" in url
-        assert "lng=-114.0" in url
-        assert "proximity" not in url
-        assert len(suggestions) == 2
-        assert suggestions[0].legal_location == "NW-36-42-3-W5"
-
     # --- Energy API ---
 
     @respx.mock
@@ -905,97 +788,6 @@ class TestTownshipCanada:
                 tc.energy_report("1-1-1-1-W4")
 
         assert exc_info.value.code == "not_found"
-
-    @respx.mock
-    def test_energy_batch(self):
-        batch_response = {
-            "results": [
-                {
-                    "legal_location": "10-36-42-3-W5",
-                    "status": "ok",
-                    "error": None,
-                    "data": ENERGY_REPORT,
-                },
-                {
-                    "legal_location": "1-1-1-1-W4",
-                    "status": "not_found",
-                    "error": None,
-                    "data": None,
-                },
-            ],
-            "meta": {"total": 2, "ok": 1, "not_found": 1, "error": 0},
-        }
-        respx.post(f"{BASE}/energy/batch").mock(
-            return_value=Response(200, json=batch_response)
-        )
-
-        with TownshipCanada("test-key") as tc:
-            batch = tc.energy_batch(["10-36-42-3-W5", "1-1-1-1-W4"])
-
-        assert len(batch.results) == 2
-        assert batch.results[0].status == "ok"
-        assert batch.results[0].error is None
-        assert batch.results[0].data is not None
-        assert batch.results[0].data.summary is not None
-        assert batch.results[0].data.summary.wells.total == 4
-        assert batch.results[1].status == "not_found"
-        assert batch.meta.total == 2
-        assert batch.meta.ok == 1
-
-    @respx.mock
-    def test_energy_batch_auto_chunks(self):
-        respx.post(f"{BASE}/energy/batch").mock(
-            return_value=Response(200, json=EMPTY_BATCH_RESPONSE)
-        )
-
-        locations = [f"10-{i}-42-3-W5" for i in range(30)]
-
-        with TownshipCanada("test-key") as tc:
-            tc.energy_batch(locations)
-
-        # 30 items with chunk size 25 -> 2 requests (25 + 5)
-        assert len(respx.calls) == 2
-
-    @respx.mock
-    def test_energy_autocomplete(self):
-        route = respx.get(f"{BASE}/energy/autocomplete").mock(
-            return_value=Response(200, json=AUTOCOMPLETE_RESPONSE)
-        )
-
-        with TownshipCanada("test-key") as tc:
-            suggestions = tc.energy_autocomplete("10-36-42")
-
-        assert "q=10-36-42" in str(route.calls[0].request.url)
-        assert len(suggestions) == 2
-
-    @respx.mock
-    def test_energy_operator_autocomplete(self):
-        route = respx.get(f"{BASE}/energy/operators/autocomplete").mock(
-            return_value=Response(200, json=OPERATORS_RESPONSE)
-        )
-
-        with TownshipCanada("test-key") as tc:
-            operators = tc.energy_operator_autocomplete("example", limit=20)
-
-        url = str(route.calls[0].request.url)
-        assert "q=example" in url
-        assert "limit=20" in url
-        assert len(operators) == 1
-        assert operators[0].ba_code == "0AB1"
-        assert operators[0].name == "EXAMPLE ENERGY LTD"
-        assert operators[0].slug == "example-energy-ltd"
-        assert operators[0].active_wells == 1250
-
-    @respx.mock
-    def test_energy_operator_autocomplete_empty(self):
-        respx.get(f"{BASE}/energy/operators/autocomplete").mock(
-            return_value=Response(200, json={"rows": [], "meta": {"q": "zzzz", "limit": 10}})
-        )
-
-        with TownshipCanada("test-key") as tc:
-            operators = tc.energy_operator_autocomplete("zzzz")
-
-        assert operators == []
 
     # --- API key header ---
 
@@ -1107,45 +899,6 @@ class TestAsyncTownshipCanada:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_ag_batch(self):
-        respx.post(f"{BASE}/ag/batch").mock(
-            return_value=Response(
-                200,
-                json={
-                    "results": [
-                        {
-                            "legal_location": "NW-36-42-3-W5",
-                            "status": "ok",
-                            "error": None,
-                            "data": AG_REPORT,
-                        }
-                    ],
-                    "meta": {"total": 1, "ok": 1, "not_found": 0, "error": 0},
-                },
-            )
-        )
-
-        async with AsyncTownshipCanada("test-key") as tc:
-            batch = await tc.ag_batch(["NW-36-42-3-W5"])
-
-        assert len(batch.results) == 1
-        assert batch.results[0].status == "ok"
-        assert batch.meta.ok == 1
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_ag_autocomplete(self):
-        respx.get(f"{BASE}/ag/autocomplete").mock(
-            return_value=Response(200, json=AUTOCOMPLETE_RESPONSE)
-        )
-
-        async with AsyncTownshipCanada("test-key") as tc:
-            suggestions = await tc.ag_autocomplete("NW-36")
-
-        assert len(suggestions) == 2
-
-    @respx.mock
-    @pytest.mark.asyncio
     async def test_energy_report(self):
         respx.get(f"{BASE}/energy/report").mock(
             return_value=Response(200, json=ENERGY_REPORT)
@@ -1158,58 +911,6 @@ class TestAsyncTownshipCanada:
         assert report.summary is not None
         assert report.summary.wells is not None
         assert report.summary.wells.total == 4
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_energy_batch(self):
-        respx.post(f"{BASE}/energy/batch").mock(
-            return_value=Response(
-                200,
-                json={
-                    "results": [
-                        {
-                            "legal_location": "1-1-1-1-W4",
-                            "status": "not_found",
-                            "error": None,
-                            "data": None,
-                        }
-                    ],
-                    "meta": {"total": 1, "ok": 0, "not_found": 1, "error": 0},
-                },
-            )
-        )
-
-        async with AsyncTownshipCanada("test-key") as tc:
-            batch = await tc.energy_batch(["1-1-1-1-W4"])
-
-        assert len(batch.results) == 1
-        assert batch.results[0].status == "not_found"
-        assert batch.meta.not_found == 1
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_energy_autocomplete(self):
-        respx.get(f"{BASE}/energy/autocomplete").mock(
-            return_value=Response(200, json=AUTOCOMPLETE_RESPONSE)
-        )
-
-        async with AsyncTownshipCanada("test-key") as tc:
-            suggestions = await tc.energy_autocomplete("10-36-42")
-
-        assert len(suggestions) == 2
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_energy_operator_autocomplete(self):
-        respx.get(f"{BASE}/energy/operators/autocomplete").mock(
-            return_value=Response(200, json=OPERATORS_RESPONSE)
-        )
-
-        async with AsyncTownshipCanada("test-key") as tc:
-            operators = await tc.energy_operator_autocomplete("example")
-
-        assert len(operators) == 1
-        assert operators[0].ba_code == "0AB1"
 
     @respx.mock
     @pytest.mark.asyncio

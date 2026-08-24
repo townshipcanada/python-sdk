@@ -185,26 +185,6 @@ class ReportMeta(_ReportSection):
     sources: Dict[str, SectionSource] = Field(default_factory=dict)
 
 
-class BatchItemError(_ReportSection):
-    """Per-item error in a batch response: ``{code, message}``.
-
-    Codes: ``invalid_legal_location``, ``batch_deadline_exceeded``,
-    ``report_failed``.
-    """
-
-    code: Optional[str] = None
-    message: Optional[str] = None
-
-
-class BatchMeta(_ReportSection):
-    """Counters over a batch response (summed across chunks by the SDK)."""
-
-    total: int = 0
-    ok: int = 0
-    not_found: int = 0
-    error: int = 0
-
-
 # --- Ag API models ---
 
 
@@ -393,22 +373,6 @@ class AgReport(_ReportSection):
     provincial_detail: Optional[AgProvincialDetail] = None
     units: Optional[Dict[str, str]] = None
     meta: Optional[ReportMeta] = None
-
-
-class AgBatchItem(BaseModel):
-    """Envelope for one item of an ag batch response (input order preserved)."""
-
-    legal_location: str
-    status: Literal["ok", "not_found", "error"]
-    error: Optional[BatchItemError] = None
-    data: Optional[AgReport] = None
-
-
-class AgBatchResponse(BaseModel):
-    """The ``{results, meta}`` envelope ``POST /ag/batch`` returns."""
-
-    results: List[AgBatchItem] = Field(default_factory=list)
-    meta: BatchMeta = Field(default_factory=BatchMeta)
 
 
 # --- Energy API models ---
@@ -669,33 +633,3 @@ class EnergyReport(_ReportSection):
     """``{ccs_tenure, geothermal_tenure, ccs_injection_wells}`` envelopes."""
     units: Optional[Dict[str, str]] = None
     meta: Optional[ReportMeta] = None
-
-
-class EnergyBatchItem(BaseModel):
-    """Envelope for one item of an energy batch response (input order preserved)."""
-
-    legal_location: str
-    status: Literal["ok", "not_found", "error"]
-    error: Optional[BatchItemError] = None
-    data: Optional[EnergyReport] = None
-
-
-class EnergyBatchResponse(BaseModel):
-    """The ``{results, meta}`` envelope ``POST /energy/batch`` returns."""
-
-    results: List[EnergyBatchItem] = Field(default_factory=list)
-    meta: BatchMeta = Field(default_factory=BatchMeta)
-
-
-class EnergyOperator(BaseModel):
-    """An AER licensee returned by operator autocomplete."""
-
-    model_config = ConfigDict(extra="allow")
-
-    name: str
-    ba_code: Optional[str] = None
-    slug: Optional[str] = None
-    """Routes straight to ``/energy/operators/{name}``."""
-    active_wells: Optional[int] = None
-    abandoned_wells: Optional[int] = None
-    orphan_wells: Optional[int] = None
