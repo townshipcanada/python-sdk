@@ -218,7 +218,7 @@ township convert "NW-36-42-3-W5" --json
 
 The Ag API also serves the eight per-section routes (`/ag/productivity`, `/ag/cropping`, `/ag/soil`, `/ag/land-use`, `/ag/drought`, `/ag/wetlands`, `/ag/hydrology`, `/ag/parcel-context`), which return the same section payloads `ag_report` embeds — use `include=[...]` to fetch just what you need in one call. For legal-location typeahead, use `autocomplete()`.
 
-**Energy API** — per-parcel energy reports (LSD grain; AB, SK, MB):
+**Energy API** — per-parcel energy reports (LSD grain; AB, SK, MB, and BC's Peace River Block):
 
 | Method                                                        | Description                                       |
 | ------------------------------------------------------------- | ------------------------------------------------- |
