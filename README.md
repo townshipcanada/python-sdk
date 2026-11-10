@@ -226,7 +226,7 @@ The Ag API also serves the eight per-section routes (`/ag/productivity`, `/ag/cr
 
 The Energy API also serves the per-section routes (`/energy/summary`, `/energy/production`, `/energy/alternative-energy`), the unbounded collection routes the report's `more` links point at (`/energy/wells`, `/energy/pipelines`, `/energy/facilities`, `/energy/tenure`), and the cross-parcel routes (`/energy/operators`, `/energy/operators/{name}`, `/energy/tenure/expiring`, `/energy/dispositions/{number}`, `/energy/pipelines/{licence}`). Operator typeahead is served by `GET /energy/operators?q=`.
 
-BC (NTS) locations are not yet supported by the Ag and Energy APIs and raise `ValidationError` with `code="bc_not_supported"`.
+The Energy API covers BC's Peace River Block, which BC surveys in DLS (meridian W6, e.g. `3-9-81-17-W6`). BC NTS locations are not supported by the Ag or Energy APIs and raise `ValidationError` with `code="bc_not_supported"`.
 
 All methods are also available on `AsyncTownshipCanada` as async/await.
 
