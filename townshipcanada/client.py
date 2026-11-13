@@ -26,6 +26,7 @@ from .models import (
     AutocompleteSuggestion,
     BatchResult,
     EnergyReport,
+    EnergyWellPlacement,
     Feature,
     FeatureCollection,
     MultiPolygon,
@@ -143,12 +144,16 @@ def _autocomplete_params(
 
 
 def _report_params(
-    legal_location: str, include: Optional[Sequence[str]]
+    legal_location: str,
+    include: Optional[Sequence[str]],
+    placement: Optional[str] = None,
 ) -> Dict[str, str]:
     """Build query params shared by the report endpoints."""
     params: Dict[str, str] = {"legal_location": legal_location}
     if include:
         params["include"] = ",".join(include)
+    if placement:
+        params["placement"] = placement
     return params
 
 
@@ -460,6 +465,7 @@ class TownshipCanada:
         legal_location: str,
         *,
         include: Optional[Sequence[str]] = None,
+        placement: Optional[EnergyWellPlacement] = None,
     ) -> EnergyReport:
         """Get the energy parcel report for a Legal Subdivision (LSD).
 
@@ -474,6 +480,13 @@ class TownshipCanada:
                 ``pipelines``, ``facilities``, ``alternative_energy``,
                 ``geometry``. ``geometry`` attaches the LSD boundary under
                 ``parcel.geometry``.
+            placement: Which hole places a well on the LSD, for the
+                ``wells`` list and the ``summary.wells`` counts together:
+                ``"surface"`` (the server default; the wellhead),
+                ``"bottom_hole"`` (where the bore ends, the location a UWI
+                names), or ``"any"`` (either, each well once). Use
+                ``"bottom_hole"`` when you start from a UWI. An unknown
+                value raises :class:`ValidationError`.
 
         Returns:
             An EnergyReport. A ``None`` section means no data at that
@@ -483,7 +496,8 @@ class TownshipCanada:
             envelopes.
         """
         response = self._client.get(
-            "/energy/report", params=_report_params(legal_location, include)
+            "/energy/report",
+            params=_report_params(legal_location, include, placement),
         )
         _raise_for_status(response)
         return EnergyReport.model_validate(response.json())
@@ -738,13 +752,15 @@ class AsyncTownshipCanada:
         legal_location: str,
         *,
         include: Optional[Sequence[str]] = None,
+        placement: Optional[EnergyWellPlacement] = None,
     ) -> EnergyReport:
         """Get the energy parcel report for a Legal Subdivision (LSD).
 
         See :meth:`TownshipCanada.energy_report` for full documentation.
         """
         response = await self._client.get(
-            "/energy/report", params=_report_params(legal_location, include)
+            "/energy/report",
+            params=_report_params(legal_location, include, placement),
         )
         _raise_for_status(response)
         return EnergyReport.model_validate(response.json())

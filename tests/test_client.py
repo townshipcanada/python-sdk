@@ -369,6 +369,55 @@ ENERGY_REPORT = {
     "meta": {"unavailable": [], "sources": {"production": {"name": "Petrinex", "as_of": None}}},
 }
 
+
+ENERGY_REPORT_BOTTOM_HOLE = {
+    "legal_location": "5-22-73-7-W4",
+    "province": "AB",
+    "summary": {
+        "wells": {
+            "total": 1,
+            "active": 1,
+            "suspended": 0,
+            "abandoned": 0,
+            "orphan": 0,
+            "reclamation_certified": 0,
+            "primary_source": "regulator",
+            "basis": "bottom_hole",
+            "by_source": {"regulator": {"total": 1, "active": 1}},
+            "by_placement": {
+                "surface": {"total": 0, "active": 0},
+                "bottom_hole": {"total": 1, "active": 1},
+            },
+        },
+    },
+    "wells": {
+        "total": 1,
+        "returned": 1,
+        "truncated": False,
+        "more": "/energy/wells?legal_location=5-22-73-7-W4&placement=bottom_hole",
+        "rows": [
+            {
+                "id": "12/05-22-073-07W4/0",
+                "uwi": "12/05-22-073-07W4/0",
+                "status": "active",
+                "is_reclamation_certified": False,
+                "location": {"lat": 55.3386, "lng": -111.0197},
+                "placement": "bottom_hole",
+                "surface": {
+                    "legal_location": "11-21-73-7-W4",
+                    "location": {"lat": 55.3386, "lng": -111.0197},
+                },
+                "bottom_hole": {
+                    "legal_location": "5-22-73-7-W4",
+                    "location": {"lat": 55.3355, "lng": -111.0032},
+                    "derived": True,
+                },
+            }
+        ],
+    },
+    "meta": {"unavailable": [], "sources": {}, "placement": "bottom_hole"},
+}
+
 # --- Sync Client Tests ---
 
 
@@ -776,6 +825,75 @@ class TestTownshipCanada:
         assert "include=summary%2Cgeometry" in str(route.calls[0].request.url)
 
     @respx.mock
+    def test_energy_report_with_placement(self):
+        route = respx.get(f"{BASE}/energy/report").mock(
+            return_value=Response(200, json=ENERGY_REPORT_BOTTOM_HOLE)
+        )
+
+        with TownshipCanada("test-key") as tc:
+            report = tc.energy_report(
+                "5-22-73-7-W4", include=["summary", "wells"], placement="bottom_hole"
+            )
+
+        url = str(route.calls[0].request.url)
+        assert "placement=bottom_hole" in url
+        assert "include=summary%2Cwells" in url
+        assert report.summary is not None and report.summary.wells is not None
+        wells = report.summary.wells
+        assert wells.basis == "bottom_hole"
+        assert wells.by_placement is not None
+        assert wells.by_placement.surface is not None
+        assert wells.by_placement.surface.total == 0
+        assert wells.by_placement.bottom_hole is not None
+        assert wells.by_placement.bottom_hole.total == 1
+        assert report.wells is not None
+        row = report.wells.rows[0]
+        assert row.placement == "bottom_hole"
+        assert row.is_reclamation_certified is False
+        assert row.surface is not None
+        assert row.surface.legal_location == "11-21-73-7-W4"
+        assert row.bottom_hole is not None
+        assert row.bottom_hole.legal_location == "5-22-73-7-W4"
+        assert row.bottom_hole.derived is True
+        assert report.meta is not None
+        assert report.meta.placement == "bottom_hole"
+
+    @respx.mock
+    def test_energy_report_omits_placement_by_default(self):
+        route = respx.get(f"{BASE}/energy/report").mock(
+            return_value=Response(200, json=ENERGY_REPORT)
+        )
+
+        with TownshipCanada("test-key") as tc:
+            report = tc.energy_report("10-36-42-3-W5")
+
+        assert "placement" not in str(route.calls[0].request.url)
+        assert report.wells is not None
+        assert report.wells.rows[0].bottom_hole is None
+        assert report.summary is not None and report.summary.wells is not None
+        assert report.summary.wells.by_placement is None
+
+    @respx.mock
+    def test_energy_report_invalid_placement(self):
+        respx.get(f"{BASE}/energy/report").mock(
+            return_value=Response(
+                400,
+                json={
+                    "error": {
+                        "code": "invalid_parameter",
+                        "message": "'placement' must be one of: surface, bottom_hole, any.",
+                    }
+                },
+            )
+        )
+
+        with TownshipCanada("test-key") as tc:
+            with pytest.raises(ValidationError) as exc_info:
+                tc.energy_report("5-22-73-7-W4", placement="wellhead")  # type: ignore[arg-type]
+
+        assert exc_info.value.code == "invalid_parameter"
+
+    @respx.mock
     def test_energy_report_not_found(self):
         respx.get(f"{BASE}/energy/report").mock(
             return_value=Response(
@@ -911,6 +1029,23 @@ class TestAsyncTownshipCanada:
         assert report.summary is not None
         assert report.summary.wells is not None
         assert report.summary.wells.total == 4
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_energy_report_with_placement(self):
+        route = respx.get(f"{BASE}/energy/report").mock(
+            return_value=Response(200, json=ENERGY_REPORT_BOTTOM_HOLE)
+        )
+
+        async with AsyncTownshipCanada("test-key") as tc:
+            report = await tc.energy_report("5-22-73-7-W4", placement="bottom_hole")
+
+        assert "placement=bottom_hole" in str(route.calls[0].request.url)
+        assert report.summary is not None and report.summary.wells is not None
+        assert report.summary.wells.basis == "bottom_hole"
+        assert report.wells is not None
+        assert report.wells.rows[0].bottom_hole is not None
+        assert report.wells.rows[0].bottom_hole.derived is True
 
     @respx.mock
     @pytest.mark.asyncio
