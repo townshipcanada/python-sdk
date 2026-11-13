@@ -183,6 +183,9 @@ class ReportMeta(_ReportSection):
 
     unavailable: List[UnavailableSection] = Field(default_factory=list)
     sources: Dict[str, SectionSource] = Field(default_factory=dict)
+    placement: Optional[str] = None
+    """Energy reports: the well placement the response used (``surface``,
+    ``bottom_hole`` or ``any``)."""
 
 
 # --- Ag API models ---
@@ -387,6 +390,11 @@ class EnergyParcel(_ReportSection):
     """GeoJSON when requested with ``include=["geometry", ...]``, else None."""
 
 
+EnergyWellPlacement = Literal["surface", "bottom_hole", "any"]
+"""Which hole places a well on an LSD: the wellhead (``surface``), where the
+bore ends (``bottom_hole``; a UWI names this location), or either (``any``)."""
+
+
 class EnergyWellCounts(_ReportSection):
     """Well counts by state (regulator or Petrinex basis)."""
 
@@ -401,12 +409,25 @@ class EnergyWellCounts(_ReportSection):
     water: Optional[int] = None
 
 
+class EnergyWellsByPlacement(_ReportSection):
+    """Well counts on both holes, whatever placement was asked."""
+
+    surface: Optional[EnergyWellCounts] = None
+    bottom_hole: Optional[EnergyWellCounts] = None
+    """None on MB parcels (MB publishes surface holes only)."""
+
+
 class EnergySummaryWells(EnergyWellCounts):
-    """Well rollup with the per-source breakdown."""
+    """Well rollup with the per-source and per-placement breakdowns."""
 
     primary_source: Optional[str] = None
     """``"regulator"`` or ``"petrinex"``."""
+    basis: Optional[str] = None
+    """What the headline counts: the regulator's wells on the requested
+    placement (``surface_hole``, ``bottom_hole``, ``surface_or_bottom_hole``),
+    or ``petrinex_uwi`` when the regulator lists no well touching the LSD."""
     by_source: Optional[Dict[str, EnergyWellCounts]] = None
+    by_placement: Optional[EnergyWellsByPlacement] = None
 
 
 class EnergyDominantOperator(OperatorRef):
@@ -507,6 +528,19 @@ class EnergyTenureRow(_ReportSection):
     """Point of the whole feature (cross-parcel rows)."""
 
 
+class EnergyWellHole(_ReportSection):
+    """One hole of a well: its LSD and point.
+
+    On a bottom hole, ``derived`` is True when AER published no bottom-hole
+    survey yet, so the LSD comes from the UWI and ``location`` is a point
+    inside it, not a surveyed position.
+    """
+
+    legal_location: Optional[str] = None
+    location: Optional[LatLng] = None
+    derived: Optional[bool] = None
+
+
 class EnergyWellRow(_ReportSection):
     """A well on the parcel."""
 
@@ -525,7 +559,16 @@ class EnergyWellRow(_ReportSection):
     is_orphan: Optional[bool] = None
     is_abandoned: Optional[bool] = None
     is_suspended: Optional[bool] = None
+    is_reclamation_certified: Optional[bool] = None
+    """True for Alberta ``RecCertified`` wells only."""
     location: Optional[LatLng] = None
+    """The surface hole."""
+    placement: Optional[str] = None
+    """Which hole placed the well on the LSD you asked for: ``surface``,
+    ``bottom_hole`` or ``both``."""
+    surface: Optional[EnergyWellHole] = None
+    bottom_hole: Optional[EnergyWellHole] = None
+    """None where the regulator publishes no bottom hole (every MB well)."""
 
 
 class EnergyPipelineRow(_ReportSection):

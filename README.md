@@ -154,7 +154,17 @@ for well in report.wells.rows:
     print(well.uwi, well.operator.name, well.status)
 for row in report.tenure.rows:
     print(row.id, row.expiry_state, row.days_to_expiry)  # signed; negative = expired
+
+# Wells whose bottom hole is in the LSD. A UWI names the bottom hole, so use
+# this when you start from a UWI. Every row carries both holes.
+by_uwi = tc.energy_report("5-22-73-7-W4", placement="bottom_hole")
+print(by_uwi.summary.wells.basis)                    # "bottom_hole"
+print(by_uwi.summary.wells.by_placement.surface.total)  # wells by wellhead, for comparison
+for well in by_uwi.wells.rows:
+    print(well.uwi, well.surface.legal_location, well.bottom_hole.legal_location)
 ```
+
+A horizontal well touches two LSDs: the surface hole (the wellhead, lease and access) and the bottom hole (where the bore ends). By default the report lists wells on their surface-hole LSD. `placement` (`"surface"`, `"bottom_hole"` or `"any"`) switches the `wells` list and the `summary.wells` counts together, so `summary.wells.total` always equals `wells.total`; `summary.wells.basis` says which placement was used.
 
 ## Async Support
 
@@ -222,7 +232,7 @@ The Ag API also serves the eight per-section routes (`/ag/productivity`, `/ag/cr
 
 | Method                                                        | Description                                       |
 | ------------------------------------------------------------- | ------------------------------------------------- |
-| `energy_report(legal_location, *, include=None)`               | Energy report for an LSD; `include` projects sections (`summary`, `production`, `tenure`, `wells`, `pipelines`, `facilities`, `alternative_energy`, `geometry`) |
+| `energy_report(legal_location, *, include=None, placement=None)` | Energy report for an LSD; `include` projects sections (`summary`, `production`, `tenure`, `wells`, `pipelines`, `facilities`, `alternative_energy`, `geometry`); `placement` (`surface`, `bottom_hole`, `any`) picks which hole places a well on the LSD |
 
 The Energy API also serves the per-section routes (`/energy/summary`, `/energy/production`, `/energy/alternative-energy`), the unbounded collection routes the report's `more` links point at (`/energy/wells`, `/energy/pipelines`, `/energy/facilities`, `/energy/tenure`), and the cross-parcel routes (`/energy/operators`, `/energy/operators/{name}`, `/energy/tenure/expiring`, `/energy/dispositions/{number}`, `/energy/pipelines/{licence}`). Operator typeahead is served by `GET /energy/operators?q=`.
 
