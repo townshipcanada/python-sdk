@@ -110,6 +110,25 @@ def _group_features_by_location(features: List[Feature]) -> Dict[str, List[Featu
     return groups
 
 
+
+def _batch_feature_groups(payload: Any) -> List[Tuple[str, List[Feature]]]:
+    """Split a batch response body into one feature list per matched record.
+
+    Both batch endpoints answer with a JSON array holding one FeatureCollection
+    (grid + centroid) per matched record. ``POST /batch/coordinates`` with
+    ``unit="all"`` answers with a single FeatureCollection instead, so that
+    shape is grouped by ``legal_location``.
+    """
+    if isinstance(payload, list):
+        groups: List[Tuple[str, List[Feature]]] = []
+        for item in payload:
+            fc = FeatureCollection.model_validate(item)
+            key = (fc.features[0].properties.legal_location or "") if fc.features else ""
+            groups.append((key, fc.features))
+        return groups
+    fc = FeatureCollection.model_validate(payload)
+    return list(_group_features_by_location(fc.features).items())
+
 def _chunk(items: list, size: int) -> List[list]:
     """Split a list into chunks of the given size."""
     return [items[i : i + size] for i in range(0, len(items), size)]
@@ -325,9 +344,7 @@ class TownshipCanada:
         for batch in _chunk(locations, chunk_size):
             response = self._client.post("/batch/legal-location", json=batch)
             _raise_for_status(response)
-            fc = FeatureCollection.model_validate(response.json())
-            grouped = _group_features_by_location(fc.features)
-            for location_key, features in grouped.items():
+            for location_key, features in _batch_feature_groups(response.json()):
                 try:
                     all_results.append(_parse_features(features))
                 except (NotFoundError, TownshipCanadaError) as exc:
@@ -376,9 +393,7 @@ class TownshipCanada:
                 body["unit"] = unit
             response = self._client.post("/batch/coordinates", json=body)
             _raise_for_status(response)
-            fc = FeatureCollection.model_validate(response.json())
-            grouped = _group_features_by_location(fc.features)
-            for location_key, features in grouped.items():
+            for location_key, features in _batch_feature_groups(response.json()):
                 try:
                     all_results.append(_parse_features(features))
                 except (NotFoundError, TownshipCanadaError) as exc:
@@ -645,9 +660,7 @@ class AsyncTownshipCanada:
         for batch in _chunk(locations, chunk_size):
             response = await self._client.post("/batch/legal-location", json=batch)
             _raise_for_status(response)
-            fc = FeatureCollection.model_validate(response.json())
-            grouped = _group_features_by_location(fc.features)
-            for location_key, features in grouped.items():
+            for location_key, features in _batch_feature_groups(response.json()):
                 try:
                     all_results.append(_parse_features(features))
                 except (NotFoundError, TownshipCanadaError) as exc:
@@ -687,9 +700,7 @@ class AsyncTownshipCanada:
                 body["unit"] = unit
             response = await self._client.post("/batch/coordinates", json=body)
             _raise_for_status(response)
-            fc = FeatureCollection.model_validate(response.json())
-            grouped = _group_features_by_location(fc.features)
-            for location_key, features in grouped.items():
+            for location_key, features in _batch_feature_groups(response.json()):
                 try:
                     all_results.append(_parse_features(features))
                 except (NotFoundError, TownshipCanadaError) as exc:

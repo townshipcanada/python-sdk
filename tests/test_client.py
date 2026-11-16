@@ -89,7 +89,9 @@ AUTOCOMPLETE_RESPONSE = {
     ],
 }
 
-BATCH_RESPONSE = {
+# POST /batch/coordinates with unit="all" answers with one FeatureCollection
+# holding every feature (api services/batch/handler.js coordinateBatch).
+BATCH_FLAT_RESPONSE = {
     "type": "FeatureCollection",
     "features": [
         {
@@ -164,6 +166,14 @@ BATCH_RESPONSE = {
         },
     ],
 }
+
+# Both batch endpoints otherwise answer with a JSON array holding one
+# FeatureCollection (grid + centroid) per matched record, not a single
+# FeatureCollection (api services/batch/handler.js).
+BATCH_RESPONSE = [
+    {"type": "FeatureCollection", "features": BATCH_FLAT_RESPONSE["features"][0:2]},
+    {"type": "FeatureCollection", "features": BATCH_FLAT_RESPONSE["features"][2:4]},
+]
 
 
 AG_REPORT = {
@@ -528,7 +538,7 @@ class TestTownshipCanada:
     @respx.mock
     def test_batch_search_auto_chunks(self):
         respx.post(f"{BASE}/batch/legal-location").mock(
-            return_value=Response(200, json=SEARCH_RESPONSE)
+            return_value=Response(200, json=BATCH_RESPONSE)
         )
 
         locations = [f"NW-{i}-42-3-W5" for i in range(150)]
@@ -550,6 +560,38 @@ class TestTownshipCanada:
 
         assert result.total == 2
         assert result.success == 2
+        assert result.results[0].legal_location == "NW-36-42-3-W5"
+        assert result.results[1].legal_location == "SE-1-50-10-W4"
+
+    @respx.mock
+    def test_batch_reverse_same_parcel_twice(self):
+        # Two points in one quarter section come back as two FeatureCollections
+        # and must stay two results, not collapse into one.
+        respx.post(f"{BASE}/batch/coordinates").mock(
+            return_value=Response(200, json=[BATCH_RESPONSE[0], BATCH_RESPONSE[0]])
+        )
+
+        with TownshipCanada("test-key") as tc:
+            result = tc.batch_reverse([(-114.648933, 52.454928), (-114.6489, 52.4549)])
+
+        assert result.total == 2
+        assert result.success == 2
+        assert result.failed == 0
+
+    @respx.mock
+    def test_batch_reverse_unit_all_single_collection(self):
+        respx.post(f"{BASE}/batch/coordinates").mock(
+            return_value=Response(200, json=BATCH_FLAT_RESPONSE)
+        )
+
+        with TownshipCanada("test-key") as tc:
+            result = tc.batch_reverse(
+                [(-114.648933, 52.454928), (-114.072, 51.045)], unit="all"
+            )
+
+        assert result.success == 2
+        assert result.results[0].legal_location == "NW-36-42-3-W5"
+        assert result.results[1].legal_location == "SE-1-50-10-W4"
 
     @respx.mock
     def test_boundary(self):
