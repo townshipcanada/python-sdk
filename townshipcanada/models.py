@@ -541,6 +541,56 @@ class EnergyWellHole(_ReportSection):
     derived: Optional[bool] = None
 
 
+class GeologicalUnit(_ReportSection):
+    """A GFA v3 geological unit, by code (e.g. ``28_K_Ca``) and name."""
+
+    code: str
+    name: Optional[str] = None
+
+
+class EnergyProducingFormation(_ReportSection):
+    """The zone a well produces from."""
+
+    pool: str
+    """Petrinex pool or deposit name as published, e.g. ``CARDIUM A``."""
+    units: List[GeologicalUnit] = Field(default_factory=list)
+    """Units holding the zone, youngest first."""
+
+
+class EnergyFormationTop(GeologicalUnit):
+    """One unit of the formation column at a point."""
+
+    era: Optional[str] = None
+    """The model's era code: ``Q``, ``Pg``, ``KPg``, ``K``, ``KJ``, ``T``,
+    ``JPCf``, ``MD``, ``D``, ``Pz``, ``PreC``."""
+    top_elevation_m: Optional[float] = None
+    """Unit top, metres above sea level."""
+    depth_m: Optional[float] = None
+    """Whole metres below ``ground_elevation_m`` (the model's land surface,
+    not a surveyed ground or a well's KB)."""
+
+
+class EnergyFormationTopsSection(_ReportSection):
+    """The formation column at the LSD centroid, top down (Alberta,
+    ``include=["formation_tops"]``).
+
+    From the Alberta Geological Survey's Geological Framework of Alberta v3,
+    a 500 m grid model: context, not well logs or an interpretation.
+    """
+
+    location: Optional[LatLng] = None
+    """The point sampled: the LSD centroid."""
+    ground_elevation_m: Optional[float] = None
+    """The model's land surface there; None when the model does not cover it."""
+    depth_reference: Optional[str] = None
+    """``model_ground_surface``."""
+    total: int = 0
+    returned: int = 0
+    truncated: bool = False
+    more: Optional[str] = None
+    rows: List[EnergyFormationTop] = Field(default_factory=list)
+
+
 class EnergyWellRow(_ReportSection):
     """A well on the parcel."""
 
@@ -569,6 +619,10 @@ class EnergyWellRow(_ReportSection):
     surface: Optional[EnergyWellHole] = None
     bottom_hole: Optional[EnergyWellHole] = None
     """None where the regulator publishes no bottom hole (every MB well)."""
+    producing_formation: Optional[EnergyProducingFormation] = None
+    """Alberta: the Petrinex producing pool and the Geological Framework of
+    Alberta v3 units that hold it. None when there is no pool, the pool names
+    no zone (commingled, temporary, numbered pools), and on SK, BC and MB rows."""
 
 
 class EnergyPipelineRow(_ReportSection):
@@ -674,5 +728,9 @@ class EnergyReport(_ReportSection):
     facilities: Optional[EnergyFacilitiesSection] = None
     alternative_energy: Optional[Dict[str, Any]] = None
     """``{ccs_tenure, geothermal_tenure, ccs_injection_wells}`` envelopes."""
+    formation_tops: Optional[EnergyFormationTopsSection] = None
+    """Only with ``include=["formation_tops"]``. None outside Alberta
+    (``meta.unavailable`` reason ``not_published_in_province``) or when the
+    model cannot be read (``source_error``, ``timeout``)."""
     units: Optional[Dict[str, str]] = None
     meta: Optional[ReportMeta] = None

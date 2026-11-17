@@ -162,7 +162,18 @@ print(by_uwi.summary.wells.basis)                    # "bottom_hole"
 print(by_uwi.summary.wells.by_placement.surface.total)  # wells by wellhead, for comparison
 for well in by_uwi.wells.rows:
     print(well.uwi, well.surface.legal_location, well.bottom_hole.legal_location)
+
+# Alberta subsurface: the formation each well produces from, and the
+# formation column at the LSD (opt-in)
+geology = tc.energy_report("10-36-42-3-W5", include=["wells", "formation_tops"])
+for well in geology.wells.rows:
+    if well.producing_formation:
+        print(well.uwi, [u.name for u in well.producing_formation.units])  # e.g. ["Cardium"]
+for top in geology.formation_tops.rows:
+    print(top.name, top.depth_m)  # metres below the model's land surface
 ```
+
+In Alberta, every well row carries `producing_formation`: the Petrinex producing pool and the Geological Framework of Alberta v3 units that hold it, or `None` when the pool names no zone. `formation_tops` is the formation column at the LSD centroid, each top in metres above sea level with its depth below the model's land surface. Both come from a 500 m provincial model (Alberta Geological Survey, OGL-Alberta), so use them for context, not in place of well logs. Outside Alberta both are `None` for now.
 
 A horizontal well touches two LSDs: the surface hole (the wellhead, lease and access) and the bottom hole (where the bore ends). By default the report lists wells on their surface-hole LSD. `placement` (`"surface"`, `"bottom_hole"` or `"any"`) switches the `wells` list and the `summary.wells` counts together, so `summary.wells.total` always equals `wells.total`; `summary.wells.basis` says which placement was used.
 
@@ -232,7 +243,7 @@ The Ag API also serves the eight per-section routes (`/ag/productivity`, `/ag/cr
 
 | Method                                                        | Description                                       |
 | ------------------------------------------------------------- | ------------------------------------------------- |
-| `energy_report(legal_location, *, include=None, placement=None)` | Energy report for an LSD; `include` projects sections (`summary`, `production`, `tenure`, `wells`, `pipelines`, `facilities`, `alternative_energy`, `geometry`); `placement` (`surface`, `bottom_hole`, `any`) picks which hole places a well on the LSD |
+| `energy_report(legal_location, *, include=None, placement=None)` | Energy report for an LSD; `include` projects sections (`summary`, `production`, `tenure`, `wells`, `pipelines`, `facilities`, `alternative_energy`, `formation_tops`, `geometry`; `formation_tops` only when named); `placement` (`surface`, `bottom_hole`, `any`) picks which hole places a well on the LSD |
 
 The Energy API also serves the per-section routes (`/energy/summary`, `/energy/production`, `/energy/alternative-energy`), the unbounded collection routes the report's `more` links point at (`/energy/wells`, `/energy/pipelines`, `/energy/facilities`, `/energy/tenure`), and the cross-parcel routes (`/energy/operators`, `/energy/operators/{name}`, `/energy/tenure/expiring`, `/energy/dispositions/{number}`, `/energy/pipelines/{licence}`). Operator typeahead is served by `GET /energy/operators?q=`.
 
@@ -299,6 +310,7 @@ All methods are also available on `AsyncTownshipCanada` as async/await.
 | `production`                       | `Optional[EnergyProduction]`      | Trailing-12-month Petrinex production (`volumes.oil_m3`, ...) |
 | `tenure` / `wells` / `pipelines` / `facilities` | section envelopes    | `{total, returned, truncated, more, rows}`; typed rows |
 | `alternative_energy`               | `Optional[dict]`                  | CCS/geothermal envelopes, when present  |
+| `formation_tops`                   | `Optional[EnergyFormationTopsSection]` | Alberta formation column at the LSD, with `include=["formation_tops"]` |
 | `units` / `meta`                   | `dict` / `ReportMeta`             | Units block and `{unavailable, sources}` metadata |
 
 Tenure rows carry a **signed** `days_to_expiry` (negative = expired) and `expiry_state` (`expired`, `expires_today`, `expiring_soon`, `active`, `perpetual`). Companies are `OperatorRef` objects (`name`, `ba_code`, `slug`) under `operator` / `holder` / `licensee`. Points are `LatLng` objects under `location`, `overlap_point`, or `centroid`.

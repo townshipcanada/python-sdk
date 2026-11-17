@@ -867,6 +867,50 @@ class TestTownshipCanada:
         assert "include=summary%2Cgeometry" in str(route.calls[0].request.url)
 
     @respx.mock
+    def test_energy_report_subsurface_fields(self):
+        payload = {
+            "legal_location": "10-36-42-3-W5",
+            "province": "AB",
+            "wells": {
+                "total": 1, "returned": 1, "truncated": False, "more": None,
+                "rows": [{
+                    "id": "00/16-09-056-17W5/0",
+                    "uwi": "00/16-09-056-17W5/0",
+                    "producing_formation": {
+                        "pool": "BELLY RIVER D",
+                        "units": [{"code": "15_K_undiff_BR", "name": "Belly River"}],
+                    },
+                }],
+            },
+            "formation_tops": {
+                "location": {"lat": 52.6215, "lng": -114.3372},
+                "ground_elevation_m": 949,
+                "depth_reference": "model_ground_surface",
+                "total": 2, "returned": 2, "truncated": False, "more": None,
+                "rows": [
+                    {"code": "01_QNgPg_sediment", "name": "Surficial sediment", "era": "Q",
+                     "top_elevation_m": 949, "depth_m": 0},
+                    {"code": "28_K_Ca", "name": "Cardium", "era": "K",
+                     "top_elevation_m": -559, "depth_m": 1508},
+                ],
+            },
+        }
+        route = respx.get(f"{BASE}/energy/report").mock(return_value=Response(200, json=payload))
+
+        with TownshipCanada("test-key") as tc:
+            report = tc.energy_report("10-36-42-3-W5", include=["wells", "formation_tops"])
+
+        assert "include=wells%2Cformation_tops" in str(route.calls[0].request.url)
+        well = report.wells.rows[0]
+        assert well.producing_formation is not None
+        assert well.producing_formation.pool == "BELLY RIVER D"
+        assert well.producing_formation.units[0].name == "Belly River"
+        assert report.formation_tops is not None
+        assert report.formation_tops.ground_elevation_m == 949
+        assert report.formation_tops.rows[1].depth_m == 1508
+        assert report.formation_tops.location.lat == 52.6215
+
+    @respx.mock
     def test_energy_report_with_placement(self):
         route = respx.get(f"{BASE}/energy/report").mock(
             return_value=Response(200, json=ENERGY_REPORT_BOTTOM_HOLE)
