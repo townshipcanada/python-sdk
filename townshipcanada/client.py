@@ -493,8 +493,9 @@ class TownshipCanada:
                 omitted sections are never queried). Valid values:
                 ``summary``, ``production``, ``tenure``, ``wells``,
                 ``pipelines``, ``facilities``, ``alternative_energy``,
-                ``geometry``. ``geometry`` attaches the LSD boundary under
-                ``parcel.geometry``.
+                ``formation_tops``, ``geometry``. ``geometry`` attaches the
+                LSD boundary under ``parcel.geometry``. ``formation_tops``
+                (Alberta) is returned only when named.
             placement: Which hole places a well on the LSD, for the
                 ``wells`` list and the ``summary.wells`` counts together:
                 ``"surface"`` (the server default; the wellhead),
