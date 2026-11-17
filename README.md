@@ -5,7 +5,7 @@
 
 Convert Canadian legal land descriptions (DLS, NTS, Geographic Townships) to GPS coordinates and back. Covers Alberta, Saskatchewan, Manitoba, British Columbia, and Ontario.
 
-[Documentation](https://townshipcanada.com/api) · [GitHub](https://github.com/townshipcanada/python-sdk) · [PyPI](https://pypi.org/project/townshipcanada/)
+[Documentation](https://townshipcanada.com/api) · [API plans](https://townshipcanada.com/pricing?ref=python-sdk#api-plans) · [GitHub](https://github.com/townshipcanada/python-sdk) · [PyPI](https://pypi.org/project/townshipcanada/)
 
 ## Installation
 
@@ -34,7 +34,7 @@ result = tc.search("A-2-F/93-P-8")
 result = tc.search("Lot 2 Con 4 Osprey")
 ```
 
-Get an API key at [townshipcanada.com/api](https://townshipcanada.com/api).
+To get an API key, choose a plan for the API you need on the [API plans page](https://townshipcanada.com/pricing?ref=python-sdk#api-plans). Each API (Search, Autocomplete, Batch, Maps and the data APIs) is its own subscription with its own key. Your keys are in the [developer portal](https://townshipcanada.com/app/api).
 
 ## Examples
 
